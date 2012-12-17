@@ -14,4 +14,4 @@ url-decode data (shrlcode -d)
 url-encode data (shrlcode -e)
 
 
-cat post.cap |shrline -z | shrlep -z --cookie session=asdf1234 --data username=bob |shrunline -z |socat... |vilistextum
+cat post.cap |shrline -z | shrlep -z --cookie session=asdf1234 --data username=bob |shrline -dz |socat... |vilistextum

@@ -1,0 +1,38 @@
+#!/usr/bin/env python
+
+import sys
+import argparse, urllib
+
+import cf
+
+parser = argparse.ArgumentParser(
+        description="process HTTP requests to/from line-based requests for shell script interaction")
+
+parser.add_argument('-d', action="store_true", help='decode from line-based input and output HTTP')
+parser.add_argument('args', nargs=argparse.REMAINDER)
+
+def shrldecode(src):
+    return urllib.unquote(src)
+
+def shrlencode(src):
+    return urllib.quote(src)
+
+
+if __name__ == "__main__":
+    args = parser.parse_args()
+
+    if args.d:
+        shrlfunc = shrldecode
+    else:
+        shrlfunc = shrlencode
+
+    if args.args:
+        for arg in args.args:
+            print shrlfunc(arg)
+    else:
+        for line in sys.stdin:
+            # don't just blindly strip all trailing ws
+            if line[-1:] == '\n':
+                line = line[:-1]
+            print shrlfunc(line)
+
