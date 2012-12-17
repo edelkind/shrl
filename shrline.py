@@ -1,138 +1,167 @@
 #!/usr/bin/env python
 
 import sys
+import argparse
 
-from BaseHTTPServer import BaseHTTPRequestHandler
-from StringIO import StringIO
+from connmojo import HTTPRequest, PARAMTYPE_GET, PARAMTYPE_POST
+import cf
 
-def addDict(target, data):
-    k,v = data.split('=', 1)
-    target[k] = v
+#def addDict(target, data):
+#    k,v = data.split('=', 1)
+#    target[k] = v
 
-class HTTPRequest(BaseHTTPRequestHandler):
-    def __init__(self, request_io):
+parser = argparse.ArgumentParser(
+        description="process HTTP requests to/from line-based requests for shell script interaction")
+
+parser.add_argument('-d', action="store_true", help='decode from line-based input and output HTTP')
+
+
+class HTTPLineProto:
+
+    def __init__(self, request_io=None, decode=False):
+        self.req = HTTPRequest()
+
         self.rfile = request_io
-        self.error_code = self.error_message = None
+        #self.error_code = self.error_message = None
 
-        self.parse_cookies()
-        self.parse_params_get()
-        self.parse_params_post()
+        if request_io:
+            if decode:
+                self.parse_byLine(request_io)
+            else:
+                self.parse_http(request_io)
 
-    def send_error(self, code, message):
-        self.error_code = code
-        self.error_message = message
 
-    def parse_http(self):
-        self.raw_requestline = self.rfile.readline()
-        self.parse_request()
+    #def parse_input(istream):
+    def parse_http(self, istream):
+        """
+        Parse a stream for http headers
+        """
 
-    def parse_byLine(self):
-        self.headers.clear()
-        self.params_get  = {}
-        self.params_post = {}
-        self.cookies     = {}
+        self.req.addRequest(istream.readline().rstrip())
+        while self.req.parseHeaderByLine(istream.readline()):
+            pass
 
-        for line in self.rfile:
-            tag,data = line.strip().split(':',1)
+        if self.req.command == "POST" and 'content-length' in self.req.headerMap:
+            data = istream.read(int(self.req.getHeader('content-length')))
+            self.req.parseParamsPost(data)
+
+
+        #self.parse_params_get()
+        #self.parse_params_post()
+
+    #def send_error(self, code, message):
+    #    self.error_code = code
+    #    self.error_message = message
+
+    #def parse_http(self):
+    #    self.raw_requestline = self.rfile.readline()
+    #    self.parse_request()
+
+    def parse_byLine(self, istream):
+
+        lineno=0
+        for line in istream:
+            lineno+=1
+            try:
+                tag,data = line.strip().split(':',1)
+            except ValueError:
+                print >>sys.stderr, "ERROR parsing line {0}: {1}".format(lineno, line.strip())
+                sys.exit(1)
             if tag == "CMD":
-                self.command = data
-            else if tag == "PATH":
-                self.path = data
-            else if tag == "HOST":
-                self.headers['host'] = data
-            else if tag == "HEAD":
-                addDict(self.headers, data)
-            else if tag == "G_PARAM":
-                addDict(self.params_get, data)
-            else if tag == 'P_PARAM':
-                addDict(self.params_post, data)
-            else if tag == 'COOKIE':
-                addDict(self.cookies, data)
-
-        if len(self.params_get):
-            gp = []
-            for k,v in self.params_get.iteritems():
-                gp.append(k + '=' + v)
-            self.path = self.path + '?' + '&'.join(gp)
-
-        if len(self.params_post):
-            pp = []
-            [ pp.append(k + '=' + v) for k,v in self.params_post ]
-            #for k,v in self.params_post.iteritems():
-            #    pp.append(k + '=' + v)
-            self.path = self.path + '?' + '&'.join(gp)
-
-        if len(self.cookies):
-            ckl = []
-            [ ckl.append(k + '=' + v) for k,v in self.cookies ]
-            self.headers['cookie'] = '; '.join(ckl)
+                self.req.command = data
+            if tag == "HTTPVER":
+                self.req.request_version = data
+            elif tag == "PATH":
+                self.req.path = data
+            elif tag == "HOST":
+                self.req.addHeaderKV('Host', data)
+            elif tag == "HEAD":
+                kv = data.split('=')
+                self.req.addHeaderKV(kv[0], kv[1])
+            elif tag == "G_PARAM":
+                self.req.addParam(data, PARAMTYPE_GET)
+            elif tag == 'P_PARAM':
+                self.req.addParam(data, PARAMTYPE_POST)
+            elif tag == 'COOKIE':
+                self.req.addCookie(data)
 
 
 
+#    def parse_params_get(self):
+#        self.params_get = {}
+#
+#        base_path, get_params = self.path.split('?', 1)
+#        if get_params:
+#            for param in get_params.split('&'):
+#                addDict(self.params_get, param)
+#                self.params_get.append(param.strip())
+#
+#        self.path = base_path
 
 
-    def parse_cookies(self):
-        self.cookies = {}
-
-        if 'cookie' in self.headers:
-            for ck in self.headers['cookie'].split(';'):
-                addDict(self.cookies, ck)
-
-
-    def parse_params_get(self):
-        self.params_get = {}
-
-        base_path, get_params = self.path.split('?', 1)
-        if get_params:
-            for param in get_params.split('&'):
-                addDict(self.params_get, param)
-                self.params_get.append(param.strip())
-
-        self.path = base_path
-
-
-    def parse_params_post(self):
-        self.params_post = []
-
-        if 'content-length' in self.headers and self.command == "POST":
-
-            data = self.rfile.read(int(self.headers['content-length']))
-            for param in data.split('&'):
-                self.params_post.append(param.strip())
+#    def parse_params_post(self):
+#        self.params_post = []
+#
+#        if 'content-length' in self.req.headerMap and self.req.command == "POST":
+#
+#            data = self.rfile.read(int(self.req.getHeader('content-length')))
+#            for param in data.split('&'):
+#                self.params_post.append(param.strip())
 
 
     def byLine(self, dest):
-	print >>dest, "CMD:" + self.command
-	print >>dest, "PATH:" + self.path
+	print >>dest, "CMD:" + self.req.command
+	print >>dest, "PATH:" + self.req.path
         try:
-            print >>dest, "HOST:" + self.headers['host']
+            print >>dest, "HOST:" + self.req.getHeader('host')
         except KeyError:
             pass
-	for hdr in self.headers.keys():
-            if  hdr == 'content-length' or \
-                hdr == 'cookie' or \
-                hdr == 'host':
+
+	for varPair in self.req.headers:
+            varName = varPair[0]
+            varNameLow = varPair[0].lower()
+            varVal  = varPair[1]
+
+            if cf.HEADERS_LOWERCASE:
+                varName = varNameLow
+
+            if  varNameLow == 'cookie' or \
+                varNameLow == 'host':
                     continue
-            print >>dest, "HEAD:" + hdr + '=' + self.headers[hdr]
+            print >>dest, "HEAD:" + varName + '=' + varVal
 
-        for ck in self.cookies:
-            print >>dest, "COOKIE:" + ck
+        for varPair in self.req.cookies:
+            varName = varPair[0]
+            varNameLow = varPair[0].lower()
+            varVal  = varPair[1]
 
-        for param in self.params_get:
+            print >>dest, "COOKIE:" + varName + '=' + varVal
+
+        for param in self.req.getParamSet(PARAMTYPE_GET):
             print >>dest, "G_PARAM:" + param
 
-        for param in self.params_post:
+        for param in self.req.getParamSet(PARAMTYPE_POST):
             print >>dest, "P_PARAM:" + param
 
-    def write_request(self, dest):
-        self.wfile = dest
+    def byHTTP(self, dest):
+        postSet = self.req.getParamSet(PARAMTYPE_POST)
+        if postSet:
+            self.req.addBody('&'.join(postSet))
+
+        dest.write(self.req.buildRequest())
+        dest.write(self.req.buildHeaders(updateLength=True))
+        dest.write('\r\n')
+        dest.write(self.req.buildBody())
+        dest.flush()
 
 
 if __name__ == "__main__":
-    req = HTTPRequest(sys.stdin)
-    if req.error_code:
-	print >>sys.stderr, "ERROR:", req.error_message
-	sys.exit(1)
+    args = parser.parse_args()
 
-    req.byLine(sys.stdout)
+    if args.d:
+        req = HTTPLineProto(sys.stdin, decode=True)
+        req.byHTTP(sys.stdout)
+    else:
+        req = HTTPLineProto(sys.stdin)
+        req.byLine(sys.stdout)
 

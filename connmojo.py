@@ -5,24 +5,114 @@ import select
 import cf
 
 
+PARAMTYPE_GET  = 1
+PARAMTYPE_POST = 2
+def validate_paramtype(prmType):
+    if prmType != PARAMTYPE_GET and prmType != PARAMTYPE_POST:
+        raise ValueError("invalid value for prmType: [{0}] (see source)".format(prmType));
+
+
 class HTTPRequest:
+
     def __init__(self):
+        # defaults; names made to match other modules
+        self.command = "GET"
+        self.path    = "/"
+        self.request_version = "HTTP/1.1"
+
         self.headers=[]
         self.headerMap={}
         self.cookies=[]
         self.cookieMap={}
+
+        self.params = []
+        self.paramMap = {}
+
         self.body=''
-        self.request=''
+        self.raw_request=None
         self.postLen=0
 
-    def addRequest(self, reqStr):
-        for host_pair in cf.HostReplace:
-            reqStr = reqStr.replace(host_pair[0], host_pair[1])
 
-        self.request = reqStr
+    def addRequest(self, reqStr):
+        """
+        Add the request line (i.e. the POST/GET/whatever line).
+
+        >>> req = HTTPRequest()
+        >>> req.addRequest("GET /url HTTP/1.1")
+        >>> req.path
+        '/url'
+
+        >>> req = HTTPRequest()
+        >>> req.addRequest("GET /url?var=x HTTP/1.1")
+        >>> req.path
+        '/url'
+        >>> req.paramMap['var']
+        ['var', 'x', 1]
+        """
+
+        self.command, self.path, self.request_version = \
+                reqStr.rstrip().split(' ')
+
+        for host_pair in cf.HostReplace:
+            self.path = self.path.replace(host_pair[0], host_pair[1])
+
+        self._parse_params_get()
+
+
+    def _parse_params_get(self):
+        if '?' not in self.path:
+            return
+
+        base_path, get_params = self.path.split('?', 1)
+        for param in get_params.split('&'):
+            self.addParam(param, PARAMTYPE_GET)
+        self.path = base_path
+
+
+    def parseParamsPost(self, data):
+
+        assert self.command == "POST", "parseParamsPost() called for non-POST request (" + self.command + ")"
+
+        for param in data.split('&'):
+            self.addParam(param.strip(), PARAMTYPE_POST)
+
+
+
+    def parseHeaderByLine(self, headStr):
+        """
+        Use this function to parse headers.  Cookies will be parsed
+        automatically.
+
+        Returns True if we're still in headers
+        Returns False if headers are now over (i.e. a lone newline was reached)
+
+        >>> req = HTTPRequest()
+        >>> req.parseHeaderByLine("Asdf: a header")
+        True
+        >>> req.parseHeaderByLine("Cookie: asdf=stuff")
+        True
+        >>> req.parseHeaderByLine("\\r\\n")
+        False
+        >>> req.cookieMap['asdf']
+        ['asdf', 'stuff']
+        """
+
+        headStr = headStr.rstrip()
+        if not len(headStr):
+            self.collectCookies()
+            return False
+
+        self.addHeader(headStr)
+        return True
+
 
     def addHeader(self, headStr):
         """
+        Add a header to the header list, in HTTP format.  Please note that this
+        does not populate the cookie list; you'll need to use collectCookies()
+        to accomplish this, or just use parseHeaderByLine() instead of this
+        function.
+
         >>> req = HTTPRequest()
         >>> req.addHeader("Asdf: a header")
         >>> req.addHeader(" etc")
@@ -40,10 +130,6 @@ class HTTPRequest:
             self.headers[-1][1] += ' ' + headStr.strip()
             return
 
-        if 'cookie' in self.headerMap:
-            self.addCookie(headStr)
-            return
-
         try:
             key, val = headStr.split(':', 1)
         except:
@@ -58,6 +144,12 @@ class HTTPRequest:
             for host_pair in cf.HostReplace:
                 val = val.replace(host_pair[0], host_pair[1])
 
+        self.addHeaderKV(key, val)
+
+    def addHeaderKV(self, key, val):
+        """
+        Add a header to the header list, with an explicit key, val pair.
+        """
         headerList = [key, val]
 
         self.headers.append(headerList)
@@ -66,10 +158,28 @@ class HTTPRequest:
         if key.lower() == 'content-length':
             self.postLen = int(val)
 
+
+    def collectCookies(self):
+        """
+        Call after headers are parsed to collect any cookies within the header
+        into the cookie map.
+        """
+        if 'cookie' not in self.headerMap:
+            return
+
+        cklist = self.headerMap['cookie'][1].split(';')
+        for ck in cklist:
+            self.addCookie(ck)
+
+
     def addCookie(self, cookieStr):
         """
+        Add one cookie to the cookie map, in name=val format.  Case is not
+        modified in the original cookie, but in the cookieMap dict, it will be
+        lowercase.
+
         >>> req = HTTPRequest()
-        >>> req.addCookie("asdf=a cookie")
+        >>> req.addCookie(" asdf=a cookie")
         >>> req.cookieMap['asdf']
         ['asdf', 'a cookie']
         """
@@ -77,7 +187,7 @@ class HTTPRequest:
             key, val = cookieStr.split('=', 1)
         except:
             raise ValueError("malformed cookie line: "
-                             "[{0}]".format(headStr))
+                             "[{0}]".format(cookieStr))
 
         key = key.strip()
         val = val.strip()
@@ -92,15 +202,52 @@ class HTTPRequest:
         self.body += s
 
 
+    def buildPath(self):
+        """
+        Builds the path with GET parameters.
+
+        >>> req = HTTPRequest()
+        >>> req.path = "/url"
+        >>> req.addParam("param1=value1", PARAMTYPE_GET)
+        >>> req.addParam("param2=value2", PARAMTYPE_GET)
+        >>> req.addParam("param3=value3", PARAMTYPE_POST)
+        >>> req.buildPath()
+        '/url?param1=value1&param2=value2'
+        """
+        url = self.path
+        getParams = self.getParamSet(PARAMTYPE_GET)
+
+        if len(getParams):
+            url += '?' + '&'.join(getParams)
+
+        return url
+
+
     def buildRequest(self):
         """
         >>> req = HTTPRequest()
         >>> req.addRequest("GET / HTTP/1.0")
         >>> req.buildRequest()
         'GET / HTTP/1.0\\r\\n'
+        >>> req.request_version
+        'HTTP/1.0'
+
+        >>> req = HTTPRequest()
+        >>> req.command = "POST"
+        >>> req.path = "/stuff"
+        >>> req.request_version = "HTTP/1.0"
+        >>> req.buildRequest()
+        'POST /stuff HTTP/1.0\\r\\n'
+        >>> req.raw_request = "XCMD /nowhere XHTTP/9"
+        >>> req.buildRequest()
+        'XCMD /nowhere XHTTP/9\\r\\n'
         """
 
-        return self.request + '\r\n'
+        if self.raw_request is not None:
+            return self.raw_request + '\r\n'
+
+        getpath = self.buildPath()
+        return self.command + ' ' + getpath + ' ' + self.request_version + '\r\n'
 
 
     def buildHeaders(self, updateLength=False):
@@ -125,10 +272,13 @@ class HTTPRequest:
             hdrStrings.append(': '.join(hdr))
 
         if self.cookies:
-            hdrStrings.append('Cookie:')
+            #hdrStrings.append('Cookie:')
+            ckStrings = []
 
             for cook in self.cookies:
-                hdrStrings.append('='.join(cook))
+                ckStrings.append('='.join(cook))
+
+            hdrStrings.append('Cookie: ' + '; '.join(ckStrings))
 
         hdrStrings.append('')
         return '\r\n'.join(hdrStrings)
@@ -156,10 +306,75 @@ class HTTPRequest:
         'Content-Length: 6\\r\\n'
         """
 
-        self.postLen = len(self.body)
+        bodyLenInt   = len(self.body)
+        bodyLenStr   = str(bodyLenInt)
+        self.postLen = bodyLenInt
 
         if 'content-length' in self.headerMap:
-            self.headerMap['content-length'][1] = str(self.postLen)
+            self.headerMap['content-length'][1] = bodyLenStr
+        else:
+            self.addHeaderKV('Content-Length', bodyLenStr)
+
+
+    def getHeader(self, varName):
+        """
+        Retrieve the contents of a header with name varName (case-insensitive).
+        """
+
+        return self.headerMap[varName.lower()][1]
+
+    def getCookie(self, varName):
+        """
+        Retrieve the contents of a cookie with name varName (case-insensitive).
+        """
+
+        return self.cookieMap[varName.lower()][1]
+
+
+    def addParam(self, prmStr, prmType):
+        """
+        Add one parameter to the parameter map, in name=val format.  prmType is
+        either PARAMTYPE_GET or PARAMTYPE_POST, and works as one might expect.
+
+        >>> req = HTTPRequest()
+        >>> req.addParam("asdf=a param", PARAMTYPE_GET)
+        >>> req.paramMap['asdf']
+        ['asdf', 'a param', 1]
+        """
+	try:
+            key, val = prmStr.split('=', 1)
+        except:
+            raise ValueError("malformed parameter line: "
+                             "[{0}]".format(prmStr))
+
+        key = key.strip()
+        val = val.strip()
+
+        validate_paramtype(prmType)
+
+        paramList = [key, val, prmType]
+
+        self.params.append(paramList)
+        self.paramMap[key.lower()] = paramList
+
+
+    def getParamSet(self, prmType):
+        """
+        Returns a list of parameters for the specified prmType, in key=val format.
+
+        Note that this is not a free operation -- the list is generated
+        dynamically.
+        """
+
+        validate_paramtype(prmType)
+
+        paramSet = []
+        url = self.path
+        for prm in self.params:
+            if prm[2] == prmType:
+                paramSet.append(prm[0] + '=' + prm[1])
+
+        return paramSet
 
 
 def makeFileIfNecessary(conn):

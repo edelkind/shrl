@@ -2,6 +2,8 @@
 TIMEOUT_SECS = 60
 LOG_DATA = False
 
+HEADERS_LOWERCASE = False
+
 RW_SEPARATOR = ">>>>>>>>>>>>>>>>>>>> <<<<<<<<<<<<<<<<<<<<"
 
 TARGET_HOST = 'some_target.com'
