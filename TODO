@@ -1,17 +1,17 @@
-parse URL data and post data into line-by-line data
-  - POST requests and GET requests, each var is on a different line
-  - each cookie is on a different line
-
-P_PARAM:username=bob
-P_PARAM:password=stuff
-G_PARAM:docid=3
-COOKIE:sessionid=salkfdj23jsdf3456
-HEADER:host=smiths.org
-
-reconstruct a GET/POST request from line-by-line data
-
-url-decode data (shrlcode -d)
-url-encode data (shrlcode -e)
-
+# parse URL data and post data into line-by-line data
+#   - POST requests and GET requests, each var is on a different line
+#   - each cookie is on a different line
+# 
+# P_PARAM:username=bob
+# P_PARAM:password=stuff
+# G_PARAM:docid=3
+# COOKIE:sessionid=salkfdj23jsdf3456
+# HEADER:host=smiths.org
+# 
+# reconstruct a GET/POST request from line-by-line data
+# 
+# url-decode data (shrlcode -d)
+# url-encode data (shrlcode -e)
+# 
 
 cat post.cap |shrline -z | shrlep -z --cookie session=asdf1234 --data username=bob |shrline -dz |socat... |vilistextum

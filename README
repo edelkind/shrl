@@ -1,0 +1,72 @@
+Shrl (SHell uRL tools) is a set of scripts, written in Python, that can make
+HTTP assessments easier for command-line enthusiasts and script writers.
+It's fashioned after the KISS principle, and makes HTTP requests simple to
+manipulate with other Unix-based command-line tools, use in loops, etc..
+Automated brute-forcing scripts are simple to write, and can be implemented
+in a single command line.
+
+These scripts were created as the author, who spent most of his career as a
+programmer, Unix/Linux sysadmin, and binary analysis/exploitation security
+guy, was tasked with more web assessment projects, and became frustrated by
+the existing GUI-based assessment tools.
+
+
+USAGE:
+
+Currently, the tools are as follows:
+
+shrline - process HTTP requests to/from line-based data that can be easily
+manipulated by shell scripts
+
+shrlep - replace shrl line-based data as specified (this tool isn't strictly
+necessary, but makes life a little easier than using sed for everything)
+
+shrlcode - encode/decode strings or streams to/from URL (percent) encoding
+
+See the --help option of each tool for more information.
+
+
+EXAMPLES:
+
+These examples assume that the tools were installed in the current PATH by
+something like the following:
+
+% pushd $PATH_LOCAL_BIN
+bin% for tool in shrline shrlep shrlcode
+for> do
+for>   ln -s $PATH_TO_SHRLINE/$tool.py $tool
+for> done
+
+Optional: set up a convenience function for socat, based on your target
+environment.  Obviously, any remote connection software may be used, but
+this is what will be assumed for the following examples:
+
+% typeset -f so
+so () {
+        local rhost=$1
+        local rport=$2
+        socat -d STDIO,ignoreeof "SSL:$rhost:$rport,verify=0,method=TLSv1"
+}
+
+
+Example 1:
+Replace the session variable with a variable of your choosing, and switch
+the username and password fields out with our own.  The long options of
+shrlep are used for clarity.
+
+% cat http_post.cap |shrline | shrlep --cookie session=asdf1234 \
+    --param username=bob --param password=53kr37 |shrline -d | \
+    so target.org 443 |vilistextum
+
+Example 2:
+A simple brute-forcer that operates serially to try a number of common
+passwords for an account.  Also, we remove the session cookie altogether.
+Obviously, if you don't know what's in the password file, you should be more
+diligent about how you read in the passwords (for correctness) and write the
+output files (for correctness and security).
+
+% for pw in `cat my_list_of_common_passwords.txt`; do \
+    shrline <http_post.cap |grep -iv 'COOKIE:session' | \
+    shrlep -r -p user=bob -p pass="$pw" |shrline -d | \
+    so target.org 443 >"out/result.$pw"
+
