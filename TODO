@@ -15,3 +15,6 @@
 # 
 
 cat post.cap |shrline -z | shrlep -z --cookie session=asdf1234 --data username=bob |shrline -dz |socat... |vilistextum
+
+
+- perhaps roll in the logging proxy and SOAP replay scripts
