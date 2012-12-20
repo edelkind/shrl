@@ -1,14 +1,14 @@
 Shrl (SHell uRL tools) is a set of scripts, written in Python, that can make
-HTTP assessments easier for command-line enthusiasts and script writers.
-It's fashioned after the KISS principle, and makes HTTP requests simple to
-manipulate with other Unix-based command-line tools, use in loops, etc..
-Automated brute-forcing scripts are simple to write, and can be implemented
-in a single command line.
+HTTP assessments easier for command-line users and script writers.  It
+subscribes to the KISS principle, and makes HTTP requests easy to manipulate
+with other Unix-based command-line tools, use in loops, etc..  Automated
+brute-forcing scripts are simple to write, and can be implemented in a
+single command line.
 
 These scripts were created as the author, who spent most of his career as a
 programmer, Unix/Linux sysadmin, and binary analysis/exploitation security
 guy, was tasked with more web assessment projects, and became frustrated by
-the existing GUI-based assessment tools.
+monolithic GUI-based assessment tools that were a pain to extend.
 
 
 USAGE:
