@@ -51,12 +51,13 @@ so () {
 
 Example 1:
 Replace the session variable with a variable of your choosing, and switch
-the username and password fields out with our own.  The long options of
-shrlep are used for clarity.
+the username and password fields out with our own.  In this particular
+example, the long options of shrlep are used for clarity, and vilistextum
+(not included) is used for output display.
 
 % cat http_post.cap |shrline | shrlep --cookie session=asdf1234 \
     --param username=bob --param password=53kr37 |shrline -d | \
-    so target.org 443 |vilistextum
+    so target.org 443 |vilistextum - -
 
 Example 2:
 A simple brute-forcer that operates serially to try a number of common
