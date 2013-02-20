@@ -8,7 +8,7 @@ import cf
 parser = argparse.ArgumentParser(
         description="encode/decode strings or streams to/from url (percent) encoding")
 
-parser.add_argument('-d', action="store_true", help='decode from line-based input and output HTTP')
+parser.add_argument('-d', action="store_true", help='decode url-encoded data')
 parser.add_argument('args', nargs=argparse.REMAINDER)
 
 def shrldecode(src):
